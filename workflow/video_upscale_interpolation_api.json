@@ -2,7 +2,7 @@
   "10": {
     "inputs": {
       "seed": 42,
-      "resolution": 1080,
+      "resolution": 720,
       "max_resolution": 0,
       "batch_size": 33,
       "uniform_batch_size": true,
