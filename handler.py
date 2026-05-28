@@ -307,7 +307,30 @@ def handler(job):
                 video_fps = get_video_fps(input_path)
                 logger.info(f"원본 비디오 FPS: {video_fps}")
         
-        resolution = calculate_resolution(width, height)
+        # Runtime-configurable settings to avoid OOM
+        max_resolution = job_input.get("max_resolution", 1280)
+        batch_size = job_input.get("batch_size", 8)
+        uniform_batch_size = job_input.get("uniform_batch_size", False)
+        temporal_overlap = job_input.get("temporal_overlap", 1)
+        rife_batch_size = job_input.get("rife_batch_size", 1)
+        attention_mode = job_input.get("attention_mode", "sdpa")
+
+        # Optional VAE tile settings
+        encode_tile_size = job_input.get("encode_tile_size", 1024)
+        decode_tile_size = job_input.get("decode_tile_size", 768)
+
+        # Limit resolution to avoid VRAM spikes
+        resolution = min(calculate_resolution(width, height), max_resolution)
+
+        logger.info(
+            f"⚙️ Runtime settings | "
+            f"resolution={resolution}, "
+            f"batch_size={batch_size}, "
+            f"uniform_batch_size={uniform_batch_size}, "
+            f"temporal_overlap={temporal_overlap}, "
+            f"rife_batch_size={rife_batch_size}, "
+            f"attention_mode={attention_mode}"
+        )
     except Exception as e:
         return {"error": f"입력 파일 크기 측정 실패: {e}"}
     
@@ -321,6 +344,19 @@ def handler(job):
         prompt["16"]["inputs"]["image"] = os.path.basename(input_path)
         # 노드 10: SeedVR2VideoUpscaler에 resolution 설정
         prompt["10"]["inputs"]["resolution"] = resolution
+
+        # Runtime overrides to reduce OOM risk
+        prompt["10"]["inputs"]["batch_size"] = batch_size
+        prompt["10"]["inputs"]["uniform_batch_size"] = uniform_batch_size
+        prompt["10"]["inputs"]["temporal_overlap"] = temporal_overlap
+
+        prompt["14"]["inputs"]["attention_mode"] = attention_mode
+
+        prompt["13"]["inputs"]["encode_tile_size"] = encode_tile_size
+        prompt["13"]["inputs"]["decode_tile_size"] = decode_tile_size
+
+        if "26" in prompt:
+            prompt["26"]["inputs"]["batch_size"] = rife_batch_size
     elif task_type == "video_upscale":
         workflow_path = os.path.join(workflow_dir, "video_upscale_api.json")
         prompt = load_workflow(workflow_path)
@@ -328,6 +364,19 @@ def handler(job):
         prompt["21"]["inputs"]["file"] = os.path.basename(input_path)
         # 노드 10: SeedVR2VideoUpscaler에 resolution 설정
         prompt["10"]["inputs"]["resolution"] = resolution
+
+        # Runtime overrides to reduce OOM risk
+        prompt["10"]["inputs"]["batch_size"] = batch_size
+        prompt["10"]["inputs"]["uniform_batch_size"] = uniform_batch_size
+        prompt["10"]["inputs"]["temporal_overlap"] = temporal_overlap
+
+        prompt["14"]["inputs"]["attention_mode"] = attention_mode
+
+        prompt["13"]["inputs"]["encode_tile_size"] = encode_tile_size
+        prompt["13"]["inputs"]["decode_tile_size"] = decode_tile_size
+
+        if "26" in prompt:
+            prompt["26"]["inputs"]["batch_size"] = rife_batch_size
     elif task_type == "video_upscale_and_interpolation":
         workflow_path = os.path.join(workflow_dir, "video_upscale_interpolation_api.json")
         prompt = load_workflow(workflow_path)
@@ -335,6 +384,19 @@ def handler(job):
         prompt["21"]["inputs"]["file"] = os.path.basename(input_path)
         # 노드 10: SeedVR2VideoUpscaler에 resolution 설정
         prompt["10"]["inputs"]["resolution"] = resolution
+
+        # Runtime overrides to reduce OOM risk
+        prompt["10"]["inputs"]["batch_size"] = batch_size
+        prompt["10"]["inputs"]["uniform_batch_size"] = uniform_batch_size
+        prompt["10"]["inputs"]["temporal_overlap"] = temporal_overlap
+
+        prompt["14"]["inputs"]["attention_mode"] = attention_mode
+
+        prompt["13"]["inputs"]["encode_tile_size"] = encode_tile_size
+        prompt["13"]["inputs"]["decode_tile_size"] = decode_tile_size
+
+        if "26" in prompt:
+            prompt["26"]["inputs"]["batch_size"] = rife_batch_size
         # 노드 25: VHS_VideoCombine에 원본 FPS의 2배 설정
         if video_fps is not None:
             doubled_fps = video_fps * 2
@@ -389,6 +451,22 @@ def handler(job):
                 raise Exception("웹소켓 연결 시간 초과 (3분)")
             time.sleep(5)
     
+    # GPU memory diagnostics
+    try:
+        import torch
+        if torch.cuda.is_available():
+            total_vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
+            allocated = torch.cuda.memory_allocated(0) / 1024**3
+            reserved = torch.cuda.memory_reserved(0) / 1024**3
+
+            logger.info(
+                f"🧠 VRAM | total={total_vram:.2f}GB "
+                f"allocated={allocated:.2f}GB "
+                f"reserved={reserved:.2f}GB"
+            )
+    except Exception as e:
+        logger.warning(f"VRAM logging failed: {e}")
+
     # 입력 타입에 따라 결과 가져오기
     if input_type == "image":
         result_path = get_image_path(ws, prompt)
