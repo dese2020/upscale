@@ -269,6 +269,7 @@ def handler(job):
         
         # 작업 타입 확인 (기본값: upscale)
         task_type_input = job_input.get("task_type", "upscale")
+        target_fps = job_input.get("target_fps")
         if task_type_input == "upscale_and_interpolation":
             task_type = "video_upscale_and_interpolation"
         else:
@@ -399,9 +400,45 @@ def handler(job):
             prompt["26"]["inputs"]["batch_size"] = rife_batch_size
         # 노드 25: VHS_VideoCombine에 원본 FPS의 2배 설정
         if video_fps is not None:
-            doubled_fps = video_fps * 2
-            prompt["25"]["inputs"]["frame_rate"] = doubled_fps
-            logger.info(f"Video Combine에 FPS 설정: {doubled_fps} (원본 FPS {video_fps}의 2배)")
+
+            # convertir a float por seguridad
+            if target_fps is not None:
+                target_fps = float(target_fps)
+    
+            # FPS destino por defecto
+            if target_fps is None:
+                target_fps = video_fps * 2
+    
+            # calcular ratio
+            ratio = target_fps / video_fps
+    
+            # seleccionar multiplicador RIFE
+            if ratio <= 1.5:
+                multiplier = 1
+            elif ratio <= 2.5:
+                multiplier = 2
+            elif ratio <= 3.5:
+                multiplier = 3
+            elif ratio <= 4.5:
+                multiplier = 4
+            else:
+                multiplier = min(round(ratio), 8)
+    
+            # FPS final real
+            final_fps = video_fps * multiplier
+    
+            # aplicar al workflow
+            prompt["26"]["inputs"]["multiplier"] = multiplier
+            prompt["25"]["inputs"]["frame_rate"] = final_fps
+    
+            logger.info(
+                f"FPS original: {video_fps} | "
+                f"Target: {target_fps} | "
+                f"Ratio: {ratio:.2f} | "
+                f"Multiplier: {multiplier} | "
+                f"Final FPS: {final_fps}"
+            )
+    
         else:
             logger.warning("FPS를 측정할 수 없어 기본값을 사용합니다.")
     else:
