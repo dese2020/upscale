@@ -315,6 +315,7 @@ def handler(job):
         temporal_overlap = job_input.get("temporal_overlap", 1)
         rife_batch_size = job_input.get("rife_batch_size", 1)
         attention_mode = job_input.get("attention_mode", "sdpa")
+        rife_fast_mode = job_input.get("rife_fast_mode", True)
 
         # Optional VAE tile settings
         encode_tile_size = job_input.get("encode_tile_size", 1024)
@@ -378,6 +379,7 @@ def handler(job):
 
         if "26" in prompt:
             prompt["26"]["inputs"]["batch_size"] = rife_batch_size
+            prompt["26"]["inputs"]["fast_mode"] = rife_fast_mode
     elif task_type == "video_upscale_and_interpolation":
         workflow_path = os.path.join(workflow_dir, "video_upscale_interpolation_api.json")
         prompt = load_workflow(workflow_path)
@@ -398,6 +400,7 @@ def handler(job):
 
         if "26" in prompt:
             prompt["26"]["inputs"]["batch_size"] = rife_batch_size
+            prompt["26"]["inputs"]["fast_mode"] = rife_fast_mode
         # 노드 25: VHS_VideoCombine에 원본 FPS의 2배 설정
         if video_fps is not None:
 
