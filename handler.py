@@ -321,8 +321,27 @@ def handler(job):
         encode_tile_size = job_input.get("encode_tile_size", 1024)
         decode_tile_size = job_input.get("decode_tile_size", 768)
 
-        # Limit resolution to avoid VRAM spikes
-        resolution = min(calculate_resolution(width, height), max_resolution)
+        # Resolution logic:
+        # - output_resolution: explicit short-side target (e.g. 720, 1080, 1440, 2160)
+        # - max_resolution: hard ceiling, always respected
+        # - If neither is set, defaults to 2x the input short side, capped at max_resolution
+        VALID_RESOLUTIONS = [480, 720, 1080, 1440, 2160]
+        output_resolution = job_input.get("output_resolution")
+
+        if output_resolution is not None:
+            output_resolution = int(output_resolution)
+            if output_resolution not in VALID_RESOLUTIONS:
+                return {
+                    "error": f"output_resolution inválido: {output_resolution}. "
+                             f"Valores permitidos: {VALID_RESOLUTIONS}"
+                }
+            # Respect max_resolution ceiling even when an explicit value is given
+            resolution = min(output_resolution, max_resolution)
+            logger.info(f"Resolución fija solicitada: {output_resolution}p → aplicada: {resolution}p")
+        else:
+            # Auto: 2x short side, capped at max_resolution
+            resolution = min(calculate_resolution(width, height), max_resolution)
+            logger.info(f"Resolución automática (2x input): {resolution}p")
 
         logger.info(
             f"⚙️ Runtime settings | "
