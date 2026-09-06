@@ -272,6 +272,8 @@ def handler(job):
         target_fps = job_input.get("target_fps")
         if task_type_input == "upscale_and_interpolation":
             task_type = "video_upscale_and_interpolation"
+        elif task_type_input == "interpolation_only":
+            task_type = "video_interpolation_only"
         else:
             task_type = "video_upscale"
         
@@ -304,7 +306,7 @@ def handler(job):
         else:  # video
             width, height = get_video_dimensions(input_path)
             # interpolation을 사용하는 경우 FPS도 측정
-            if task_type == "video_upscale_and_interpolation":
+            if task_type in ("video_upscale_and_interpolation", "video_interpolation_only"):
                 video_fps = get_video_fps(input_path)
                 logger.info(f"원본 비디오 FPS: {video_fps}")
         
@@ -461,6 +463,51 @@ def handler(job):
                 f"Final FPS: {final_fps}"
             )
     
+        else:
+            logger.warning("FPS를 측정할 수 없어 기본값을 사용합니다.")
+    elif task_type == "video_interpolation_only":
+        workflow_path = os.path.join(workflow_dir, "interpolation_only_api.json")
+        prompt = load_workflow(workflow_path)
+        # 노드 21: LoadVideo에 비디오 경로 설정
+        prompt["21"]["inputs"]["file"] = os.path.basename(input_path)
+
+        if "26" in prompt:
+            prompt["26"]["inputs"]["batch_size"] = rife_batch_size
+            prompt["26"]["inputs"]["fast_mode"] = rife_fast_mode
+
+        # 노드 25/26: 목표 FPS에 맞춰 RIFE multiplier 계산 (업스케일+보간 로직과 동일)
+        if video_fps is not None:
+            if target_fps is not None:
+                target_fps = float(target_fps)
+
+            if target_fps is None:
+                target_fps = video_fps * 2
+
+            ratio = target_fps / video_fps
+
+            if ratio <= 1.5:
+                multiplier = 1
+            elif ratio <= 2.5:
+                multiplier = 2
+            elif ratio <= 3.5:
+                multiplier = 3
+            elif ratio <= 4.5:
+                multiplier = 4
+            else:
+                multiplier = min(round(ratio), 8)
+
+            final_fps = video_fps * multiplier
+
+            prompt["26"]["inputs"]["multiplier"] = multiplier
+            prompt["25"]["inputs"]["frame_rate"] = final_fps
+
+            logger.info(
+                f"[interpolation_only] FPS original: {video_fps} | "
+                f"Target: {target_fps} | "
+                f"Ratio: {ratio:.2f} | "
+                f"Multiplier: {multiplier} | "
+                f"Final FPS: {final_fps}"
+            )
         else:
             logger.warning("FPS를 측정할 수 없어 기본값을 사용합니다.")
     else:
